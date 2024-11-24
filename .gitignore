@@ -9,3 +9,9 @@ wheels/
 # Virtual environments
 .venv
 .env
+
+# A directory for code experiments
+playground/
+
+# Temp directory
+Tmp/

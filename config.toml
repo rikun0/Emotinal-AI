@@ -1,0 +1,6 @@
+# 設定ファイル
+[emotion]
+use_emotion = true # 感情全体のオンオフ
+advanced_mode = false # ここがtureの場合、generalは無視されます
+[emotion.advanced]
+voice_emotion = true
