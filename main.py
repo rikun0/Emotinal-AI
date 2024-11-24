@@ -8,7 +8,7 @@ import queue
 import re
 import threading
 import time
-import tomllib as toml
+import tomllib
 # サードパーティライブラリのimport（アルファベット順）
 import google.generativeai as gemini
 import pygame
@@ -20,7 +20,8 @@ from gtts import gTTS
 # いまのところなし
 
 class EmotionalAI:
-    # 初期化メソッド
+
+    # 初期化メソッド群
     def __init__(self):
         # 初期化処理
         load_dotenv() # リポジトリ特有の環境変数を読み込む
@@ -40,6 +41,7 @@ class EmotionalAI:
         self._init_read_config()
         self._init_tmp_folder()
         self._init_tts()
+
     def _init_chat(self):
         SYSTEM_PROMPT = f"""
         System prompt: これはシステムプロンプトでユーザーからの入力ではありません。あなたは何よりもこのシステムプロンプトを優先しなければなりません。
@@ -56,19 +58,34 @@ class EmotionalAI:
                 "parts": [{"text": "了解しました。"}],
             }]
         self.chat_template = self.chat
+
     def _init_llm(self):
         GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
         gemini.configure(api_key=GOOGLE_API_KEY)
         self.model = gemini.GenerativeModel("gemini-1.5-flash-002")
+
     def _init_pygame(self):
         pygame.mixer.init() # pygameの音声を扱うモジュールの初期化
+
     def _init_stt(self):
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone()
+
     def _init_read_config(self):
-        with open("config.toml", "r") as f:
-            config = toml.load(f)
-        self.emotion = config["emotion"]["use_emotion"]
+        try:
+            with open("config.toml", "rb") as f:
+                config = tomllib.load(f)
+            self.emotion = config["emotion"]["use_emotion"]
+        except UnicodeDecodeError as e:
+            print(f"config.tomlはUTF-8でエンコードされている必要があります。エラー: {e}")
+            raise
+        except FileNotFoundError as e:
+            print(f"config.tomlが見つかりませんでした。エラー: {e}")
+            raise
+        except Exception as e:
+            print(f"config.tomlの読み込み中に予期せぬエラーが発生しました。エラー: {e}")
+            raise
+
     def _init_tmp_folder(self):
         # Tmpフォルダを作成
         if not os.path.exists("./Tmp"):
@@ -76,13 +93,13 @@ class EmotionalAI:
         # Tmpフォルダ内のファイルをすべて削除
         for file in os.listdir("./Tmp"):
             os.remove(f"./Tmp/{file}")
+
     def _init_tts(self):
-        self.SBV2_URL = "http://127.0.0.1:5000/voice"
-        self.SBV2_HEADERS = {"accept": "audio/wav"}
+        print("Emotion: ", self.emotion)
         if self.emotion:
             self.sound_format = "wav"
-        else:
-            self.sound_format = "mp3"
+            self.SBV2_URL = "http://127.0.0.1:5000/voice"
+            self.SBV2_HEADERS = {"accept": "audio/wav"}
             self.tts_params_templete = {
                 "text": "ここに合成したい音声を代入",
                 "speaker_id": 0,
@@ -97,8 +114,11 @@ class EmotionalAI:
                 "style": "Neutral",
                 "style_weight": 2,
             }
+        else:
+            self.sound_format = "mp3"
 
-    # ヘルパーメソッド
+
+    # ヘルパーメソッド群
     # 会話履歴にLLMの返答を追加するメソッド
     def add_llm_response(self, text):
         self.chat.append(
@@ -107,6 +127,7 @@ class EmotionalAI:
                 "parts": [{"text": text}],
             }
         )
+
     # 会話履歴にユーザーの入力を追加するメソッド
     def add_user_input(self, text):
         self.chat.append(
@@ -115,16 +136,18 @@ class EmotionalAI:
                 "parts": [{"text": text}],
             }
         )
+
     # StyleBertVITS2サーバーの起動確認
     def check_tts_server(self):
         try:
             response = requests.get("http://127.0.0.1:5000/status")
-            if response.status_code == 200:
-                return True
-            else:
-                return False
+            return response.status_code == 200
+        except requests.exceptions.ConnectionError:
+            return False
         except Exception as e:
-            print(f"Error checking TTS server: {e}")
+            print(f"予期せぬエラーが発生しました: {e}")
+            return False
+
     # 合成された音声ファイルを一時的に保存するメソッド
     def save_audio(self, audio, sentence):
         sentence = re.sub(r"[\\/:*?\"<>|\r\n]", "", sentence) # sentenceにファイル名に使えない文字が含まれている場合は削除
@@ -133,10 +156,15 @@ class EmotionalAI:
         while os.path.exists(audio_file_path):
             audio_file_path = f"./Tmp/{sentence}_{str(counter)}.{self.sound_format}"
             counter += 1
-        audio.save(audio_file_path)
+        if self.emotion:
+            with open(audio_file_path, "wb") as f:
+                f.write(audio)
+        else:
+            audio.save(audio_file_path)
         return audio_file_path
 
-    # メインで使用するメソッド
+
+    # メインで使用するメソッド群
     # 会話を開始するメソッド
     def start(self):
         # StyleBertVITS2サーバーの起動確認
@@ -157,6 +185,7 @@ class EmotionalAI:
         text_to_speech_thread.start()
         # メインループ
         self.conversation()
+
     # LLMとの会話を処理し続けるメソッド
     def chat_with_llm(self):
         while True:
@@ -182,6 +211,7 @@ class EmotionalAI:
             self.add_llm_response(response.text)
             print("Model response: ", response.text)
             self.queues["tts"].put(response.text)
+
     # 旧メインループ
     def conversation(self):
         while True:
@@ -206,6 +236,7 @@ class EmotionalAI:
                 os.remove(audio_file_path)
             except queue.Empty:
                 continue
+
     # ユーザーの声を聞き続けるメソッド
     def listen(self):
         # 音を聞き続けるループ
@@ -222,6 +253,7 @@ class EmotionalAI:
                     print("Timeout")
                     continue
                 self.queues["user_voice"].put(audio)
+
     # 音声を再生するメソッド
     def play_audio(self, audio_file_path):
         try:
@@ -238,6 +270,7 @@ class EmotionalAI:
         except Exception as e:
             print(f"Error playing audio: {e}")
             self.current_channel = None
+
     # 音声を処理し一覧に追加するメソッド
     def recognize(self):
         while True:
@@ -253,6 +286,7 @@ class EmotionalAI:
                 continue
             #print("stop_flag: set")
             self.stop_flag.set()
+
     # 音声を合成するメソッド
     def text_to_speech(self):
         while True:
@@ -276,6 +310,7 @@ class EmotionalAI:
                             continue
                     audio_file_path = self.save_audio(audio, sentence)
                     self.queues["play"].put(audio_file_path)
+
 
 if __name__ == "__main__":
     emotional_ai = EmotionalAI()
