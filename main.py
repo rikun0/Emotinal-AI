@@ -163,6 +163,24 @@ class EmotionalAI:
             audio.save(audio_file_path)
         return audio_file_path
 
+    # 音声合成のリクエストを送信するメソッド
+    def tts_request(self, text):
+        if self.emotion:
+            try:
+                params = self.tts_params_templete
+                params["text"] = text
+                audio = requests.get(self.SBV2_URL, headers=self.SBV2_HEADERS, params=params).content
+            except Exception as e:
+                print(f"Error generating audio: {e}")
+                return None
+        else:
+            try:
+                audio = gTTS(text=text, lang="ja", slow=False)
+            except Exception as e:
+                print(f"Error generating audio: {e}")
+                return None
+        return audio
+
 
     # メインで使用するメソッド群
     # 会話を開始するメソッド
@@ -294,20 +312,7 @@ class EmotionalAI:
             sentences = re.split(r'[。．.!?！？;:\n]', text)
             for sentence in sentences:
                 if sentence.strip():  # 空文字列を避ける
-                    if self.emotion:
-                        try:
-                            params = self.tts_params_templete
-                            params["text"] = sentence
-                            audio = requests.get(self.SBV2_URL, headers=self.SBV2_HEADERS, params=params).content
-                        except Exception as e:
-                            print(f"Error generating audio: {e}")
-                            continue
-                    else:
-                        try:
-                            audio = gTTS(text=sentence, lang="ja", slow=False)
-                        except Exception as e:
-                            print(f"Error generating audio: {e}")
-                            continue
+                    audio = self.tts_request(sentence)
                     audio_file_path = self.save_audio(audio, sentence)
                     self.queues["play"].put(audio_file_path)
 
