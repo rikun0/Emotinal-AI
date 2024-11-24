@@ -148,6 +148,23 @@ class EmotionalAI:
             print(f"予期せぬエラーが発生しました: {e}")
             return False
 
+    # 音声を再生するメソッド
+    def play_audio(self, audio_file_path):
+        try:
+            sound = pygame.mixer.Sound(audio_file_path)
+            self.current_channel = sound.play()
+            #print("開始再生:", audio_file_path)
+            # 再生が終了するまで待機
+            while self.current_channel.get_busy():
+                pygame.time.Clock().tick(10)
+            #print("再生終了:", audio_file_path)
+            self.current_channel = None
+            # 再生の合間に少しだけ間を開ける
+            pygame.time.wait(500)  # 500ミリ秒（0.5秒）待機
+        except Exception as e:
+            print(f"Error playing audio: {e}")
+            self.current_channel = None
+
     # 合成された音声ファイルを一時的に保存するメソッド
     def save_audio(self, audio, sentence):
         sentence = re.sub(r"[\\/:*?\"<>|\r\n]", "", sentence) # sentenceにファイル名に使えない文字が含まれている場合は削除
@@ -204,7 +221,8 @@ class EmotionalAI:
         # メインループ
         self.conversation()
 
-    # LLMとの会話を処理し続けるメソッド
+    # LLMとの会話を処理するメソッド
+    # ループで実行される
     def chat_with_llm(self):
         while True:
             if self.chat[-1]["role"] == "user": # モデルの反応前にユーザーインプットが送られた場合は空のモデル発話を追加
@@ -230,7 +248,9 @@ class EmotionalAI:
             print("Model response: ", response.text)
             self.queues["tts"].put(response.text)
 
-    # 旧メインループ
+    # 音声再生を処理し続けるメソッド
+    # メインスレッドで実行される
+    # ループで実行される
     def conversation(self):
         while True:
             if self.stop_flag.is_set():
@@ -256,6 +276,7 @@ class EmotionalAI:
                 continue
 
     # ユーザーの声を聞き続けるメソッド
+    # ループで実行される
     def listen(self):
         # 音を聞き続けるループ
         while True:
@@ -272,24 +293,8 @@ class EmotionalAI:
                     continue
                 self.queues["user_voice"].put(audio)
 
-    # 音声を再生するメソッド
-    def play_audio(self, audio_file_path):
-        try:
-            sound = pygame.mixer.Sound(audio_file_path)
-            self.current_channel = sound.play()
-            #print("開始再生:", audio_file_path)
-            # 再生が終了するまで待機
-            while self.current_channel.get_busy():
-                pygame.time.Clock().tick(10)
-            #print("再生終了:", audio_file_path)
-            self.current_channel = None
-            # 再生の合間に少しだけ間を開ける
-            pygame.time.wait(500)  # 500ミリ秒（0.5秒）待機
-        except Exception as e:
-            print(f"Error playing audio: {e}")
-            self.current_channel = None
-
     # 音声を処理し一覧に追加するメソッド
+    # ループで実行される
     def recognize(self):
         while True:
             # 音声入力をテキストに変換
@@ -306,10 +311,11 @@ class EmotionalAI:
             self.stop_flag.set()
 
     # 音声を合成するメソッド
+    # ループで実行される
     def text_to_speech(self):
         while True:
             text = self.queues["tts"].get()
-            sentences = re.split(r'[。．.!?！？;:\n]', text)
+            sentences = re.split(r'[。．.!?！？;:\n]', text) # 区切れ目で分割
             for sentence in sentences:
                 if sentence.strip():  # 空文字列を避ける
                     audio = self.tts_request(sentence)
