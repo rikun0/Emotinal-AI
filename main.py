@@ -11,11 +11,13 @@ import time
 import tomllib
 # サードパーティライブラリのimport（アルファベット順）
 import google.generativeai as gemini
+from gtts import gTTS
+from dotenv import load_dotenv
+import pyaudio
 import pygame
 import requests
 import speech_recognition as sr
-from dotenv import load_dotenv
-from gtts import gTTS
+import webrtcvad
 # 独自ライブラリのimport（アルファベット順）
 # いまのところなし
 
@@ -27,6 +29,7 @@ class EmotionalAI:
         load_dotenv() # リポジトリ特有の環境変数を読み込む
         self.chat = []
         self.current_channel = None # 音声を再生中のPygameチャネル
+        self.is_speaking = False
         self.stop_flag = threading.Event()
         self.queues = {
             "user_inputs": queue.Queue(),
@@ -41,6 +44,7 @@ class EmotionalAI:
         self._init_read_config()
         self._init_tmp_folder()
         self._init_tts()
+        self._init_voice_detection()
 
     def _init_chat(self):
         SYSTEM_PROMPT = f"""
@@ -76,6 +80,7 @@ class EmotionalAI:
             with open("config.toml", "rb") as f:
                 config = tomllib.load(f)
             self.emotion = config["emotion"]["use_emotion"]
+            self.voice_detection_config = config["voice_detection"]
         except UnicodeDecodeError as e:
             print(f"config.tomlはUTF-8でエンコードされている必要があります。エラー: {e}")
             raise
@@ -116,6 +121,26 @@ class EmotionalAI:
             }
         else:
             self.sound_format = "mp3"
+
+    def _init_voice_detection(self):
+        # WebRTCの設定
+        aggressiveness = self.voice_detection_config["aggressiveness"]
+        self.vad = webrtcvad.Vad(aggressiveness)
+        self.RATE = self.voice_detection_config["sample_rate"]
+        self.CHANNELS = 1
+        self.CHUNK_DURATION_MS = 30 # ひとつひとつの音声の長さ（ミリ秒）
+        self.PUDDING_DURATION_MS = 300 # 発話終了と判断するための無音の長さ（ミリ秒）
+        self.CHUNK_SIZE = int(self.RATE * self.CHUNK_DURATION_MS / 1000)
+        self.CHUNK_PER_PUDDING = int(self.PUDDING_DURATION_MS / self.CHUNK_DURATION_MS)
+        # PyAudioの設定
+        self.p_audio = pyaudio.PyAudio()
+        self.stream = self.p_audio.open(
+            format=pyaudio.paInt16,  # WebRTCVADは16bitの音声データのみサポート
+            channels=self.CHANNELS,
+            rate=self.RATE,
+            input=True,
+            frames_per_buffer=self.CHUNK_SIZE
+        )
 
 
     # ヘルパーメソッド群
@@ -321,6 +346,11 @@ class EmotionalAI:
                     audio = self.tts_request(sentence)
                     audio_file_path = self.save_audio(audio, sentence)
                     self.queues["play"].put(audio_file_path)
+
+    # 音声検出を行うメソッド
+    # ループで実行される
+    def voice_detection(self):
+        pass
 
 
 if __name__ == "__main__":

@@ -1,6 +1,23 @@
 # 設定ファイル
+
 [emotion]
-use_emotion = true # 感情全体のオンオフ
-advanced_mode = false # ここがtureの場合、generalは無視されます
+# 感情全体のオンオフ
+use_emotion = true
+
+# 感情の詳細な設定を有効にするか
+# ここがtureの場合、generalは無視されます
+advanced_mode = false
+
 [emotion.advanced]
+# 音声の合成に感情を付与するか
 voice_emotion = true
+
+[voice_detection]
+# VADの感度 (0-3)
+# 0: 最も寛容 (誤検出が多いが声を見逃さない)
+# 3: 最も厳格 (誤検出は少ないが声を見逃すことがある)
+aggressiveness = 0
+
+# サンプリングレート
+#  8000, 16000, 32000, 48000 Hz のみサポート
+sample_rate = 16000

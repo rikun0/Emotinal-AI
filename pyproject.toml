@@ -11,5 +11,7 @@ dependencies = [
     "pyaudio>=0.2.14",
     "pygame>=2.6.1",
     "python-dotenv>=1.0.1",
+    "setuptools>=75.6.0",
     "speechrecognition>=3.10.4",
+    "webrtcvad>=2.0.10",
 ]
