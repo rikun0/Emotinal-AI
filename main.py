@@ -9,6 +9,8 @@ import re
 import threading
 import time
 import tomllib
+import asyncio
+import websockets
 # サードパーティライブラリのimport（アルファベット順）
 import google.generativeai as gemini
 from gtts import gTTS
@@ -37,6 +39,7 @@ class EmotionalAI:
             "play": queue.Queue(),
             "tts": queue.Queue()
         }
+        self.websocket_server = None
         self._init_chat()
         self._init_llm()
         self._init_pygame()
@@ -227,6 +230,8 @@ class EmotionalAI:
     # メインで使用するメソッド群
     # 会話を開始するメソッド
     def start(self):
+        # WebSocketサーバーを非同期で開始
+        asyncio.get_event_loop().run_until_complete(self.start_websocket_server())
         # StyleBertVITS2サーバーの起動確認
         if self.emotion:
             while not self.check_tts_server():
@@ -351,6 +356,26 @@ class EmotionalAI:
     # ループで実行される
     def voice_detection(self):
         pass
+
+    async def websocket_handler(self, websocket):
+        try:
+            async for message in websocket:
+                if message == "speech_start":
+                    print("Discord: Speech started")
+                    self.stop_flag.set()  # 現在の音声を停止
+                elif message == "speech_end":
+                    print("Discord: Speech ended")
+                    # 必要に応じて追加の処理
+        except websockets.exceptions.ConnectionClosed:
+            pass
+
+    async def start_websocket_server(self):
+        self.websocket_server = await websockets.serve(
+            lambda ws: self.websocket_handler(ws),
+            "localhost",
+            8765
+        )
+        await self.websocket_server.wait_closed()
 
 
 if __name__ == "__main__":

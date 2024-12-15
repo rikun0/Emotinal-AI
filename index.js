@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const { connect } = require('node:http2');
 const path = require('node:path');
 const { Stream } = require('node:stream');
+const WebSocket = require('ws');
 require('dotenv').config();
 
 // クライアントを作成
@@ -12,6 +13,26 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 client.commands = new Collection();
 // VCを格納する変数を作成
 let connectedVC = null;
+let ws = null;
+
+// WebSocket接続を確立する関数
+function connectWebSocket() {
+    ws = new WebSocket('ws://localhost:8765');
+    
+    ws.on('error', console.error);
+    
+    ws.on('open', () => {
+        console.log('WebSocket接続が確立されました');
+    });
+
+    ws.on('close', () => {
+        console.log('WebSocket接続が切断されました。再接続を試みます...');
+        setTimeout(connectWebSocket, 5000);
+    });
+}
+
+// 最初の接続を確立
+connectWebSocket();
 
 // コマンドファイルを読み込む
 const commandsPath = path.join(__dirname, 'commands');
@@ -70,6 +91,10 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
             // ユーザーが話し始めたとき
             receiver.speaking.on('start', userId => {
                 console.log(`${userId}が話し始めました。`);
+                // Pythonプログラムに通知
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send('speech_start');
+                }
                 // 録音する
                 const audioStream = receiver.subscribe(userId, {
                     end: {
@@ -90,6 +115,10 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
             // 話し終えたとき
             receiver.speaking.on('end', userId => {
                 console.log(`${userId}が話し終えました。`);
+                // Pythonプログラムに通知
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send('speech_end');
+                }
             });
 
         } else if (newState.channelId === null) {

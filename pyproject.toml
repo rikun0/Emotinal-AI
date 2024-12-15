@@ -14,4 +14,5 @@ dependencies = [
     "setuptools>=75.6.0",
     "speechrecognition>=3.10.4",
     "webrtcvad>=2.0.10",
+    "websockets>=14.1",
 ]
