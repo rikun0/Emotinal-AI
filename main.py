@@ -269,8 +269,8 @@ class EmotionalAI:
             # モデルの応答を生成
             try:
                 print("Sending to model...")
-                response = self.model.generate_content(self.chat)
-                #response = type('Response', (object,), {'text': "テスト目的で現在はLLMではなく例文を返すようにしています。とりあえず長文であればいいため、このような状態となっています。リアルタイムの会話処理ってすごく難しいんですね。オープンAIの高度な音声モードってどんな仕組みなんでしょうか？"})
+                #response = self.model.generate_content(self.chat)
+                response = type('Response', (object,), {'text': "テスト目的で現在はLLMではなく例文を返すようにしています。とりあえず長文であればいいため、このような状態となっています。リアルタイムの会話処理ってすごく難しいんですね。オープンAIの高度な音声モードってどんな仕組みなんでしょうか？"})
             except Exception as e:
                 print(f"Error generating model response: {e}")
                 continue
@@ -288,21 +288,11 @@ class EmotionalAI:
                 #print("stop_flag: clear")
                 self.stop_flag.clear()
                 # 現在再生中の音声を停止
-                pygame.mixer.stop()
+                # TODO: 音声再生を停止する処理を追加
                 #print("音声再生を停止しました")
             try:
                 audio_file_path = self.queues["play"].get(timeout=1)
-                play_audio_thread = threading.Thread(target=self.play_audio, args=(audio_file_path,), daemon=True)
-                play_audio_thread.start()
-                while play_audio_thread.is_alive():
-                    if self.stop_flag.is_set():
-                        pygame.mixer.stop()
-                        #print("停止中：音声再生を停止しました")
-                        self.stop_flag.clear()
-                        self.queues["tts"].queue.clear()
-                        while not self.queues["play"].empty():
-                            self.queues["play"].get()
-                os.remove(audio_file_path)
+                asyncio.run_coroutine_threadsafe(self.send_message(audio_file_path), self.loop)
             except queue.Empty:
                 continue
 

@@ -1,5 +1,5 @@
 const { Client, Events, GatewayIntentBits, Collection } = require('discord.js');
-const { joinVoiceChannel, VoiceReceiver, EndBehaviorType } = require('@discordjs/voice');
+const { joinVoiceChannel, VoiceReceiver, EndBehaviorType, createAudioPlayer, NoSubscriberBehavior, createAudioResource, StreamType, AudioPlayerStatus, VoiceConnectionStatus, entersState } = require('@discordjs/voice');
 const fs = require('node:fs');
 const { connect } = require('node:http2');
 const path = require('node:path');
@@ -15,6 +15,54 @@ client.commands = new Collection();
 // VCを格納する変数を作成
 let connectedVC = null;
 let ws = null;
+// 再生キュー
+let play_queue = [];
+// 音声プレイヤー
+const player = createAudioPlayer({
+    behaviors: {
+        noSubscriber: NoSubscriberBehavior.Play,
+    },
+});
+// 再生中かどうか
+let isPlaying = false;
+
+// 音声再生関数
+async function playAudio() {
+    if (play_queue.length === 0) {
+        isPlaying = false;
+        return;
+    }
+    if (!connectedVC) {
+        isPlaying = false;
+        return;
+    }
+    isPlaying = true;
+    const filePath = play_queue[0];
+    try {
+        const resource = createAudioResource(play_queue[0], {
+            inputType: StreamType.Arbitrary,
+        });
+        player.play(resource);
+        connectedVC.subscribe(player);
+    } catch (error) {
+        console.error('音声再生中にエラーが発生しました:', error);
+        play_queue.shift(); // 再生が終了した音声をキューから削除
+        playAudio(); // 次の音声を再生
+    }
+}
+
+// 音声再生が終了したときの処理
+player.on(AudioPlayerStatus.Idle, () => {
+    if (play_queue.length > 0) {
+        fs.unlink(play_queue[0], (err) => {
+            if (err) console.error('ファイル削除中にエラーが発生しました:', err);
+        });
+        play_queue.shift(); // 再生が終了した音声をキューから削除
+        playAudio(); // 次の音声を再生
+    } else {
+        isPlaying = false;
+    }
+});
 
 // WebSocket接続を確立する関数
 function connectWebSocket() {
@@ -37,6 +85,12 @@ function connectWebSocket() {
         console.log('WebSocketメッセージ:', message.toString());
         if (message === 'ready') {
             console.log('Pythonプログラムが準備完了しました');
+        }
+        if (message.toString().endsWith('.wav') || message.toString().endsWith('.mp3')) {
+            play_queue.push(message.toString());
+            if (!isPlaying) {
+                playAudio();
+            }
         }
     });
 
@@ -103,6 +157,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
             }
             // 音声を取得する準備
             const receiver = connectedVC.receiver;
+            playAudio();  // 音声を再生
             // ユーザーが話し始めたとき
             receiver.speaking.on('start', userId => {
                 console.log(`${userId}が話し始めました。`);
