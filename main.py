@@ -11,15 +11,15 @@ import time
 import tomllib
 import asyncio
 import websockets
+import subprocess
 # サードパーティライブラリのimport（アルファベット順）
+from pydub import AudioSegment
 import google.generativeai as gemini
 from gtts import gTTS
 from dotenv import load_dotenv
-import pyaudio
 import pygame
 import requests
 import speech_recognition as sr
-import webrtcvad
 # 独自ライブラリのimport（アルファベット順）
 # いまのところなし
 
@@ -35,9 +35,9 @@ class EmotionalAI:
         self.stop_flag = threading.Event()
         self.queues = {
             "user_inputs": queue.Queue(),
-            "user_voice": queue.Queue(),
             "play": queue.Queue(),
-            "tts": queue.Queue()
+            "tts": queue.Queue(),
+            "user_voice": queue.Queue(),
         }
         self.websocket_server = None
         self._init_chat()
@@ -47,7 +47,6 @@ class EmotionalAI:
         self._init_read_config()
         self._init_tmp_folder()
         self._init_tts()
-        self._init_voice_detection()
 
     def _init_chat(self):
         SYSTEM_PROMPT = f"""
@@ -76,7 +75,7 @@ class EmotionalAI:
 
     def _init_stt(self):
         self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
+        #self.microphone = sr.Microphone()
 
     def _init_read_config(self):
         try:
@@ -101,6 +100,12 @@ class EmotionalAI:
         # Tmpフォルダ内のファイルをすべて削除
         for file in os.listdir("./Tmp"):
             os.remove(f"./Tmp/{file}")
+        # recordedフォルダを作成
+        if not os.path.exists("./recorded"):
+            os.makedirs("./recorded")
+        # recordedフォルダ内のファイルをすべて削除
+        for file in os.listdir("./recorded"):
+            os.remove(f"./recorded/{file}")
 
     def _init_tts(self):
         print("Emotion: ", self.emotion)
@@ -124,26 +129,6 @@ class EmotionalAI:
             }
         else:
             self.sound_format = "mp3"
-
-    def _init_voice_detection(self):
-        # WebRTCの設定
-        aggressiveness = self.voice_detection_config["aggressiveness"]
-        self.vad = webrtcvad.Vad(aggressiveness)
-        self.RATE = self.voice_detection_config["sample_rate"]
-        self.CHANNELS = 1
-        self.CHUNK_DURATION_MS = 30 # ひとつひとつの音声の長さ（ミリ秒）
-        self.PUDDING_DURATION_MS = 300 # 発話終了と判断するための無音の長さ（ミリ秒）
-        self.CHUNK_SIZE = int(self.RATE * self.CHUNK_DURATION_MS / 1000)
-        self.CHUNK_PER_PUDDING = int(self.PUDDING_DURATION_MS / self.CHUNK_DURATION_MS)
-        # PyAudioの設定
-        self.p_audio = pyaudio.PyAudio()
-        self.stream = self.p_audio.open(
-            format=pyaudio.paInt16,  # WebRTCVADは16bitの音声データのみサポート
-            channels=self.CHANNELS,
-            rate=self.RATE,
-            input=True,
-            frames_per_buffer=self.CHUNK_SIZE
-        )
 
 
     # ヘルパーメソッド群
@@ -226,12 +211,34 @@ class EmotionalAI:
                 return None
         return audio
 
+    def to_wav(self, input_file_path): # TODO このメソッドで音声ファイルをwavにできるようにする
+        # WAVファイルのパスを生成
+        wav_file_path = os.path.splitext(opus_file_path)[0] + '.wav'
+        # Opusファイルを読み込み
+        audio = AudioSegment.from_file(opus_file_path, format='opus')
+        # WAVファイルとしてエクスポート
+        audio.export(wav_file_path, format='wav')
+        return wav_file_path
+
+    # WebSocketサーバーを開始するメソッド
+    async def start_websocket_server(self):
+        self.websocket_server = await websockets.serve(
+            lambda ws: self.websocket_handler(ws),
+            "localhost",
+            8765
+        )
+        await self.websocket_server.wait_closed()
+
+    def start_server_thread(self):
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        server_thread = threading.Thread(target=loop.run_until_complete, args=(self.start_websocket_server(),))
+        server_thread.start()
+
 
     # メインで使用するメソッド群
     # 会話を開始するメソッド
     def start(self):
-        # WebSocketサーバーを非同期で開始
-        asyncio.get_event_loop().run_until_complete(self.start_websocket_server())
         # StyleBertVITS2サーバーの起動確認
         if self.emotion:
             while not self.check_tts_server():
@@ -239,12 +246,14 @@ class EmotionalAI:
                 time.sleep(5)
                 continue
         # スレッドを設定
-        listen_thread = threading.Thread(target=self.listen)
+        #listen_thread = threading.Thread(target=self.listen)
         recognize_thread = threading.Thread(target=self.recognize)
         chat_with_llm_thread = threading.Thread(target=self.chat_with_llm)
         text_to_speech_thread = threading.Thread(target=self.text_to_speech)
+        # WebSocketサーバーを開始
+        self.start_server_thread()
         # スレッドを開始
-        listen_thread.start()
+        #listen_thread.start() # マイク入力を一時的に無効化
         recognize_thread.start()
         chat_with_llm_thread.start()
         text_to_speech_thread.start()
@@ -307,6 +316,7 @@ class EmotionalAI:
 
     # ユーザーの声を聞き続けるメソッド
     # ループで実行される
+    # このメソッドは現在使用していない
     def listen(self):
         # 音を聞き続けるループ
         while True:
@@ -321,6 +331,7 @@ class EmotionalAI:
                     self.stop_flag.clear()
                     print("Timeout")
                     continue
+                print(type(audio))
                 self.queues["user_voice"].put(audio)
 
     # 音声を処理し一覧に追加するメソッド
@@ -328,7 +339,11 @@ class EmotionalAI:
     def recognize(self):
         while True:
             # 音声入力をテキストに変換
-            audio = self.queues["user_voice"].get()
+            audio_file_path = self.queues["user_voice"].get()
+            # ファイルパスから音声を読み込む
+            #converted_audio_file_path = self.to_wav(audio_file_path)
+            with sr.AudioFile(audio_file_path) as source:
+                audio = self.recognizer.record(source)
             try:
                 print("Recognizing...")
                 user_input = self.recognizer.recognize_google(audio, language="ja-JP")
@@ -352,11 +367,7 @@ class EmotionalAI:
                     audio_file_path = self.save_audio(audio, sentence)
                     self.queues["play"].put(audio_file_path)
 
-    # 音声検出を行うメソッド
-    # ループで実行される
-    def voice_detection(self):
-        pass
-
+    # WebSocketハンドラー
     async def websocket_handler(self, websocket):
         try:
             async for message in websocket:
@@ -365,17 +376,18 @@ class EmotionalAI:
                     self.stop_flag.set()  # 現在の音声を停止
                 elif message == "speech_end":
                     print("Discord: Speech ended")
-                    # 必要に応じて追加の処理
+                else:
+                    try:
+                        # 音声データを受信
+                        audio_file_path = message
+                        if audio_file_path is not None:
+                            self.queues["user_voice"].put(audio_file_path)
+                        else:
+                            print("受け取った音声データのパスがNoneです")
+                    except Exception as e:
+                        print(f"音声ファイルパスの受け取りに失敗しました: {e}")
         except websockets.exceptions.ConnectionClosed:
             pass
-
-    async def start_websocket_server(self):
-        self.websocket_server = await websockets.serve(
-            lambda ws: self.websocket_handler(ws),
-            "localhost",
-            8765
-        )
-        await self.websocket_server.wait_closed()
 
 
 if __name__ == "__main__":

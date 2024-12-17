@@ -9,6 +9,7 @@ dependencies = [
     "gtts>=2.5.3",
     "numpy>=2.1.2",
     "pyaudio>=0.2.14",
+    "pydub>=0.25.1",
     "pygame>=2.6.1",
     "python-dotenv>=1.0.1",
     "setuptools>=75.6.0",

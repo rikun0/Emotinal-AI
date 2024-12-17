@@ -5,6 +5,7 @@ const { connect } = require('node:http2');
 const path = require('node:path');
 const { Stream } = require('node:stream');
 const WebSocket = require('ws');
+const Prism = require('prism-media');
 require('dotenv').config();
 
 // クライアントを作成
@@ -17,22 +18,29 @@ let ws = null;
 
 // WebSocket接続を確立する関数
 function connectWebSocket() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+        console.log('既に接続済みです');
+        return;
+    }
+
     ws = new WebSocket('ws://localhost:8765');
-    
-    ws.on('error', console.error);
-    
+
+    ws.on('error', (error) => {
+        console.error('WebSocket接続エラー:', error.message);
+    });
+
     ws.on('open', () => {
         console.log('WebSocket接続が確立されました');
     });
 
     ws.on('close', () => {
-        console.log('WebSocket接続が切断されました。再接続を試みます...');
+        console.log('WebSocket接続が切断されました。5秒後に再接続を試みます...');
         setTimeout(connectWebSocket, 5000);
     });
 }
 
-// 最初の接続を確立
-connectWebSocket();
+// 起動時に少し遅延を入れて接続を試みる
+setTimeout(connectWebSocket, 3000);
 
 // コマンドファイルを読み込む
 const commandsPath = path.join(__dirname, 'commands');
@@ -102,24 +110,35 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                         duration: 100,
                     }
                 });
-                var filename = './recorded/' + Date.now() + '.dat';
-                var file = fs.createWriteStream(filename);
-                Stream.pipeline(audioStream, file, (err) =>{
-                    if(err){
-                        console.error('録音中にエラーが発生しました:', err);
-                    }else{
-                        console.log(`${filename}に録音しました。`);
+                var file_name = './recorded/' + Date.now() + '.wav';
+                var writeStream = fs.createWriteStream(file_name);
+                var pcmBuffer = [];
+                const opusDecoder = new Prism.opus.Decoder({
+                    frameSize: 960,
+                    channels: 2,
+                    rate: 48000,
+                });
+                opusDecoder.on('data', (chunk) => {
+                    pcmBuffer.push(chunk);
+                });
+                audioStream.pipe(opusDecoder);
+                audioStream.on('end', () => {
+                    console.log('音声の録音が終了しました。');
+                    const pcmData = Buffer.concat(pcmBuffer);
+                    const wavData = createWavFile(pcmData);
+                    fs.writeFileSync(file_name, wavData);
+                    // Pythonプログラムに通知
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send('speech_end');
+                        ws.send(file_name);
                     }
                 });
             });
             // 話し終えたとき
             receiver.speaking.on('end', userId => {
                 console.log(`${userId}が話し終えました。`);
-                // Pythonプログラムに通知
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send('speech_end');
-                }
             });
+            ///
 
         } else if (newState.channelId === null) {
             if (connectedVC === null) return;  // BotがVCに参加していないときは無視
@@ -136,6 +155,30 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
         console.error('VoiceStateUpdate イベントの処理中にエラーが発生しました:', error);
     }
 });
+
+// WAVファイルの作成
+function createWavFile(buffer, sampleRate = 48000, numChannels = 2, bitDepth = 16) {
+    const byteRate = (sampleRate * numChannels * bitDepth) / 8;
+    const blockAlign = (numChannels * bitDepth) / 8;
+    const dataSize = buffer.length;
+
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0); // RIFFヘッダー
+    header.writeUInt32LE(36 + dataSize, 4); // チャンクサイズ (44 - 8 + dataSize)
+    header.write('WAVE', 8); // フォーマット
+    header.write('fmt ', 12); // 'fmt 'チャンク
+    header.writeUInt32LE(16, 16); // fmtチャンクのサイズ（16バイト）
+    header.writeUInt16LE(1, 20); // フォーマット (1 = PCM)
+    header.writeUInt16LE(numChannels, 22); // チャンネル数
+    header.writeUInt32LE(sampleRate, 24); // サンプリングレート
+    header.writeUInt32LE(byteRate, 28); // バイトレート
+    header.writeUInt16LE(blockAlign, 32); // ブロックサイズ
+    header.writeUInt16LE(bitDepth, 34); // ビット深度
+    header.write('data', 36); // dataチャンク
+    header.writeUInt32LE(dataSize, 40); // dataチャンクのサイズ
+
+    return Buffer.concat([header, buffer]);
+}
 
 // ボットが起動したときの処理
 client.once(Events.ClientReady, readyClient => {
