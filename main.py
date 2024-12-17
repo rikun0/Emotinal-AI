@@ -45,6 +45,8 @@ class EmotionalAI:
         self._init_read_config()
         self._init_tmp_folder()
         self._init_tts()
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
 
     def _init_chat(self):
         SYSTEM_PROMPT = f"""
@@ -219,32 +221,34 @@ class EmotionalAI:
         await self.websocket_server.wait_closed()
 
     def start_server_thread(self):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        server_thread = threading.Thread(target=loop.run_until_complete, args=(self.start_websocket_server(),))
+        server_thread = threading.Thread(target=self.loop.run_until_complete, args=(self.start_websocket_server(),))
         server_thread.start()
 
 
     # メインで使用するメソッド群
     # 会話を開始するメソッド
     def start(self):
+        # WebSocketサーバーを開始
+        print("WebSocketサーバーを起動中...")
+        self.start_server_thread()
         # StyleBertVITS2サーバーの起動確認
         if self.emotion:
             while not self.check_tts_server():
-                print("Waiting for TTS server to start...")
+                print("TTSサーバーの起動を待機中...")
                 time.sleep(5)
                 continue
         # スレッドを設定
         recognize_thread = threading.Thread(target=self.recognize)
         chat_with_llm_thread = threading.Thread(target=self.chat_with_llm)
         text_to_speech_thread = threading.Thread(target=self.text_to_speech)
-        # WebSocketサーバーを開始
-        self.start_server_thread()
         # スレッドを開始
+        print("各スレッドを起動中...")
         recognize_thread.start()
         chat_with_llm_thread.start()
         text_to_speech_thread.start()
         # メインループ
+        print("メインループを起動中...")
+        asyncio.run_coroutine_threadsafe(self.send_message("ready"), self.loop)
         self.conversation()
 
     # LLMとの会話を処理するメソッド
@@ -278,6 +282,7 @@ class EmotionalAI:
     # メインスレッドで実行される
     # ループで実行される
     def conversation(self):
+        print("正常に起動しました")
         while True:
             if self.stop_flag.is_set():
                 #print("stop_flag: clear")
@@ -336,13 +341,14 @@ class EmotionalAI:
     # WebSocketハンドラー
     async def websocket_handler(self, websocket):
         try:
+            self.websocket = websocket
             async for message in websocket:
                 if message == "speech_start":
                     print("Discord: Speech started")
                     self.stop_flag.set()  # 現在の音声を停止
                 elif message == "speech_end":
                     print("Discord: Speech ended")
-                else:
+                elif message.endswith(".wav"):
                     try:
                         # 音声データを受信
                         audio_file_path = message
@@ -352,8 +358,21 @@ class EmotionalAI:
                             print("受け取った音声データのパスがNoneです")
                     except Exception as e:
                         print(f"音声ファイルパスの受け取りに失敗しました: {e}")
+                else:
+                    print(f"受信したメッセージ: {message}")
         except websockets.exceptions.ConnectionClosed:
             pass
+        finally:
+            self.websocket = None
+
+    # websocketでメッセージを送信するメソッド
+    async def send_message(self, message):
+        if hasattr(self, "websocket") and self.websocket:
+            try:
+                await self.websocket.send(str(message))
+                print(f"{message} と送信しました")
+            except Exception as e:
+                print(f"メッセージの送信に失敗しました: {e}")
 
 
 if __name__ == "__main__":

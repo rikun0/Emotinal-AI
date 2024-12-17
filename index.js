@@ -33,6 +33,13 @@ function connectWebSocket() {
         console.log('WebSocket接続が確立されました');
     });
 
+    ws.on('message', (message) => {
+        console.log('WebSocketメッセージ:', message.toString());
+        if (message === 'ready') {
+            console.log('Pythonプログラムが準備完了しました');
+        }
+    });
+
     ws.on('close', () => {
         console.log('WebSocket接続が切断されました。5秒後に再接続を試みます...');
         setTimeout(connectWebSocket, 5000);
