@@ -134,12 +134,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                     }
                 });
             });
-            // 話し終えたとき
-            receiver.speaking.on('end', userId => {
-                console.log(`${userId}が話し終えました。`);
-            });
-            ///
-
         } else if (newState.channelId === null) {
             if (connectedVC === null) return;  // BotがVCに参加していないときは無視
             // VCから退出したとき

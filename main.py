@@ -11,16 +11,14 @@ import time
 import tomllib
 import asyncio
 import websockets
-import subprocess
-# サードパーティライブラリのimport（アルファベット順）
-from pydub import AudioSegment
+# サードパーティライブラリのimport
 import google.generativeai as gemini
 from gtts import gTTS
 from dotenv import load_dotenv
 import pygame
 import requests
 import speech_recognition as sr
-# 独自ライブラリのimport（アルファベット順）
+# 独自ライブラリのimport
 # いまのところなし
 
 class EmotionalAI:
@@ -211,15 +209,6 @@ class EmotionalAI:
                 return None
         return audio
 
-    def to_wav(self, input_file_path): # TODO このメソッドで音声ファイルをwavにできるようにする
-        # WAVファイルのパスを生成
-        wav_file_path = os.path.splitext(opus_file_path)[0] + '.wav'
-        # Opusファイルを読み込み
-        audio = AudioSegment.from_file(opus_file_path, format='opus')
-        # WAVファイルとしてエクスポート
-        audio.export(wav_file_path, format='wav')
-        return wav_file_path
-
     # WebSocketサーバーを開始するメソッド
     async def start_websocket_server(self):
         self.websocket_server = await websockets.serve(
@@ -246,14 +235,12 @@ class EmotionalAI:
                 time.sleep(5)
                 continue
         # スレッドを設定
-        #listen_thread = threading.Thread(target=self.listen)
         recognize_thread = threading.Thread(target=self.recognize)
         chat_with_llm_thread = threading.Thread(target=self.chat_with_llm)
         text_to_speech_thread = threading.Thread(target=self.text_to_speech)
         # WebSocketサーバーを開始
         self.start_server_thread()
         # スレッドを開始
-        #listen_thread.start() # マイク入力を一時的に無効化
         recognize_thread.start()
         chat_with_llm_thread.start()
         text_to_speech_thread.start()
@@ -314,26 +301,6 @@ class EmotionalAI:
             except queue.Empty:
                 continue
 
-    # ユーザーの声を聞き続けるメソッド
-    # ループで実行される
-    # このメソッドは現在使用していない
-    def listen(self):
-        # 音を聞き続けるループ
-        while True:
-            # ユーザーの音声入力を受け付ける
-            with self.microphone as source:
-                self.recognizer.adjust_for_ambient_noise(source)
-                print("Listening...")
-                try:
-                    audio = self.recognizer.listen(source, phrase_time_limit=5, timeout=1)
-                except sr.WaitTimeoutError:
-                    #print("stop_flag: clear")
-                    self.stop_flag.clear()
-                    print("Timeout")
-                    continue
-                print(type(audio))
-                self.queues["user_voice"].put(audio)
-
     # 音声を処理し一覧に追加するメソッド
     # ループで実行される
     def recognize(self):
@@ -341,7 +308,6 @@ class EmotionalAI:
             # 音声入力をテキストに変換
             audio_file_path = self.queues["user_voice"].get()
             # ファイルパスから音声を読み込む
-            #converted_audio_file_path = self.to_wav(audio_file_path)
             with sr.AudioFile(audio_file_path) as source:
                 audio = self.recognizer.record(source)
             try:
