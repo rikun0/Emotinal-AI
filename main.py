@@ -40,7 +40,6 @@ class EmotionalAI:
         self.websocket_server = None
         self._init_chat()
         self._init_llm()
-        self._init_pygame()
         self._init_stt()
         self._init_read_config()
         self._init_tmp_folder()
@@ -68,10 +67,7 @@ class EmotionalAI:
     def _init_llm(self):
         GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
         gemini.configure(api_key=GOOGLE_API_KEY)
-        self.model = gemini.GenerativeModel("gemini-1.5-flash-002")
-
-    def _init_pygame(self):
-        pygame.mixer.init() # pygameの音声を扱うモジュールの初期化
+        self.model = gemini.GenerativeModel("gemini-1.5-flash")
 
     def _init_stt(self):
         self.recognizer = sr.Recognizer()
@@ -160,23 +156,6 @@ class EmotionalAI:
         except Exception as e:
             print(f"予期せぬエラーが発生しました: {e}")
             return False
-
-    # 音声を再生するメソッド
-    def play_audio(self, audio_file_path):
-        try:
-            sound = pygame.mixer.Sound(audio_file_path)
-            self.current_channel = sound.play()
-            #print("開始再生:", audio_file_path)
-            # 再生が終了するまで待機
-            while self.current_channel.get_busy():
-                pygame.time.Clock().tick(10)
-            #print("再生終了:", audio_file_path)
-            self.current_channel = None
-            # 再生の合間に少しだけ間を開ける
-            pygame.time.wait(500)  # 500ミリ秒（0.5秒）待機
-        except Exception as e:
-            print(f"Error playing audio: {e}")
-            self.current_channel = None
 
     # 合成された音声ファイルを一時的に保存するメソッド
     def save_audio(self, audio, sentence):
@@ -269,8 +248,8 @@ class EmotionalAI:
             # モデルの応答を生成
             try:
                 print("Sending to model...")
-                #response = self.model.generate_content(self.chat)
-                response = type('Response', (object,), {'text': "テスト目的で現在はLLMではなく例文を返すようにしています。とりあえず長文であればいいため、このような状態となっています。リアルタイムの会話処理ってすごく難しいんですね。オープンAIの高度な音声モードってどんな仕組みなんでしょうか？"})
+                response = self.model.generate_content(self.chat)
+                #response = type('Response', (object,), {'text': "テスト目的で現在はLLMではなく例文を返すようにしています。とりあえず長文であればいいため、このような状態となっています。リアルタイムの会話処理ってすごく難しいんですね。オープンAIの高度な音声モードってどんな仕組みなんでしょうか？"})
             except Exception as e:
                 print(f"Error generating model response: {e}")
                 continue
@@ -284,17 +263,11 @@ class EmotionalAI:
     def conversation(self):
         print("正常に起動しました")
         while True:
-            if self.stop_flag.is_set():
-                #print("stop_flag: clear")
-                self.stop_flag.clear()
-                # 現在再生中の音声を停止
-                # TODO: 音声再生を停止する処理を追加
-                #print("音声再生を停止しました")
+            audio_file_path = self.queues["play"].get()
             try:
-                audio_file_path = self.queues["play"].get(timeout=1)
                 asyncio.run_coroutine_threadsafe(self.send_message(audio_file_path), self.loop)
-            except queue.Empty:
-                continue
+            except Exception as e:
+                print(f"Error sending audio file path: {e}")
 
     # 音声を処理し一覧に追加するメソッド
     # ループで実行される
@@ -305,15 +278,18 @@ class EmotionalAI:
             # ファイルパスから音声を読み込む
             with sr.AudioFile(audio_file_path) as source:
                 audio = self.recognizer.record(source)
+            os.remove(audio_file_path)
             try:
                 print("Recognizing...")
                 user_input = self.recognizer.recognize_google(audio, language="ja-JP")
                 print(f"User input: {user_input}")
                 self.queues["user_inputs"].put(user_input)
             except sr.UnknownValueError:
+                asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
                 print("Could not understand audio")
                 continue
             #print("stop_flag: set")
+            asyncio.run_coroutine_threadsafe(self.send_message("delete"), self.loop)
             self.stop_flag.set()
 
     # 音声を合成するメソッド

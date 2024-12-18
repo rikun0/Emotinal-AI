@@ -23,46 +23,35 @@ const player = createAudioPlayer({
         noSubscriber: NoSubscriberBehavior.Play,
     },
 });
-// 再生中かどうか
-let isPlaying = false;
+let isPause = false; // 再生を一時中断しているか
+let currentAudioFile = null; // 現在再生中の音声リソース
 
-// 音声再生関数
-async function playAudio() {
+// 音声を再生する関数
+function playAudio() {
     if (play_queue.length === 0) {
-        isPlaying = false;
+        console.log('再生キューが空です');
         return;
     }
-    if (!connectedVC) {
-        isPlaying = false;
-        return;
-    }
-    isPlaying = true;
-    const filePath = play_queue[0];
-    try {
-        const resource = createAudioResource(play_queue[0], {
-            inputType: StreamType.Arbitrary,
-        });
-        player.play(resource);
-        connectedVC.subscribe(player);
-    } catch (error) {
-        console.error('音声再生中にエラーが発生しました:', error);
-        play_queue.shift(); // 再生が終了した音声をキューから削除
-        playAudio(); // 次の音声を再生
-    }
+    currentAudioFile = play_queue.shift();
+    const resource = createAudioResource(currentAudioFile, {
+        inputType: StreamType.Arbitrary,
+    });
+    player.play(resource);
+    player.on(AudioPlayerStatus.Idle, () => {
+        if (!isPause) {
+            fs.unlink(currentAudioFile, (error) => {
+                if (error) {
+                    console.error('音声ファイルの削除中にエラーが発生しました:', error);
+                }
+            });
+            playAudio();
+        }
+    });
+    player.on(AudioPlayerStatus.Paused, () => {
+        console.log('再生が一時中断されました');
+        play_queue.unshift(currentAudioFile);
+    });
 }
-
-// 音声再生が終了したときの処理
-player.on(AudioPlayerStatus.Idle, () => {
-    if (play_queue.length > 0) {
-        fs.unlink(play_queue[0], (err) => {
-            if (err) console.error('ファイル削除中にエラーが発生しました:', err);
-        });
-        play_queue.shift(); // 再生が終了した音声をキューから削除
-        playAudio(); // 次の音声を再生
-    } else {
-        isPlaying = false;
-    }
-});
 
 // WebSocket接続を確立する関数
 function connectWebSocket() {
@@ -70,30 +59,47 @@ function connectWebSocket() {
         console.log('既に接続済みです');
         return;
     }
-
     ws = new WebSocket('ws://localhost:8765');
-
     ws.on('error', (error) => {
         console.error('WebSocket接続エラー:', error.message);
     });
-
     ws.on('open', () => {
         console.log('WebSocket接続が確立されました');
     });
-
     ws.on('message', (message) => {
         console.log('WebSocketメッセージ:', message.toString());
         if (message === 'ready') {
             console.log('Pythonプログラムが準備完了しました');
         }
         if (message.toString().endsWith('.wav') || message.toString().endsWith('.mp3')) {
-            play_queue.push(message.toString());
-            if (!isPlaying) {
+            console.log('Received audio file:', message.toString());
+            play_queue.push(message.toString()); // 再生キューに音声ファイルを追加
+            isPause = false;
+            playAudio(); // 音声を再生
+        }
+        if (message === 'restart') {
+            console.log('Received restart command');
+            isPause = false;
+            if (!player.state.status === AudioPlayerStatus.Playing) {
                 playAudio();
             }
         }
+        if (message === 'delete') {
+            console.log('Received delete command');
+            isPause = false;
+            if (player.state.status === AudioPlayerStatus.Playing) {
+                player.stop();
+            }
+            play_queue.forEach(file => {
+                fs.unlink(file, (error) => {
+                    if (error) {
+                        console.error('音声ファイルの削除中にエラーが発生しました:', error);
+                    }
+                });
+            });
+            play_queue = [];
+        }
     });
-
     ws.on('close', () => {
         console.log('WebSocket接続が切断されました。5秒後に再接続を試みます...');
         setTimeout(connectWebSocket, 5000);
@@ -102,39 +108,6 @@ function connectWebSocket() {
 
 // 起動時に少し遅延を入れて接続を試みる
 setTimeout(connectWebSocket, 3000);
-
-// コマンドファイルを読み込む
-const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
-
-// コマンドを登録
-for (const file of commandFiles) {
-    try {
-        const command = require(path.join(commandsPath, file));
-        if ('data' in command && 'execute' in command) {
-            client.commands.set(command.data.name, command);
-        }
-    } catch (error) {
-        console.error(`コマンドファイル ${file} の読み込み中にエラーが発生しました:`, error);
-    }
-}
-
-// コマンド実行処理
-client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isChatInputCommand()) return;  // コマンド以外は無視
-    const command = interaction.client.commands.get(interaction.commandName);
-    if (!command) {
-        await interaction.reply({ content: 'コマンドが見つかりません', ephemeral: true });
-        return;
-    }
-    // コマンドの実行とエラーハンドリング
-    try {
-        await command.execute(interaction);
-    } catch (error) {
-        console.error(`コマンド ${interaction.commandName} の実行中にエラーが発生しました:`, error);
-        await interaction.reply({ content: 'エラーが発生しました', ephemeral: true });
-    }
-});
 
 // ユーザーがVCに参加したときの処理
 client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
@@ -157,7 +130,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
             }
             // 音声を取得する準備
             const receiver = connectedVC.receiver;
-            playAudio();  // 音声を再生
             // ユーザーが話し始めたとき
             receiver.speaking.on('start', userId => {
                 console.log(`${userId}が話し始めました。`);
@@ -173,7 +145,6 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                     }
                 });
                 var file_name = './recorded/' + Date.now() + '.wav';
-                var writeStream = fs.createWriteStream(file_name);
                 var pcmBuffer = [];
                 const opusDecoder = new Prism.opus.Decoder({
                     frameSize: 960,
@@ -235,6 +206,40 @@ function createWavFile(buffer, sampleRate = 48000, numChannels = 2, bitDepth = 1
 
     return Buffer.concat([header, buffer]);
 }
+
+// コマンドファイルを読み込む
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+// コマンドを登録
+for (const file of commandFiles) {
+    try {
+        const command = require(path.join(commandsPath, file));
+        if ('data' in command && 'execute' in command) {
+            client.commands.set(command.data.name, command);
+        }
+    } catch (error) {
+        console.error(`コマンドファイル ${file} の読み込み中にエラーが発生しました:`, error);
+    }
+}
+
+// コマンド実行処理
+client.on(Events.InteractionCreate, async interaction => {
+    if (!interaction.isChatInputCommand()) return;  // コマンド以外は無視
+    const command = interaction.client.commands.get(interaction.commandName);
+    if (!command) {
+        await interaction.reply({ content: 'コマンドが見つかりません', ephemeral: true });
+        return;
+    }
+    // コマンドの実行とエラーハンドリング
+    try {
+        await command.execute(interaction);
+    } catch (error) {
+        console.error(`コマンド ${interaction.commandName} の実行中にエラーが発生しました:`, error);
+        await interaction.reply({ content: 'エラーが発生しました', ephemeral: true });
+    }
+});
+
 
 // ボットが起動したときの処理
 client.once(Events.ClientReady, readyClient => {
