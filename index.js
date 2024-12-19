@@ -15,43 +15,70 @@ client.commands = new Collection();
 // VCを格納する変数を作成
 let connectedVC = null;
 let ws = null;
-// 再生キュー
-let play_queue = [];
-// 音声プレイヤー
+// Playerを作成
 const player = createAudioPlayer({
-    behaviors: {
-        noSubscriber: NoSubscriberBehavior.Play,
-    },
+	behaviors: {
+		noSubscriber: NoSubscriberBehavior.Play,
+	},
 });
-let isPause = false; // 再生を一時中断しているか
-let currentAudioFile = null; // 現在再生中の音声リソース
+// 音声を再生していいか
+let canPlay = true;
+// 音声を再生しているか
+let isPlaying = false;
+// ポーズ中かどうか
+let isPaused = false;
+// 再生する音声ファイルのキュー
+let playQueue = [];
+// 再生中の音声ファイルのパス
+let playingFile = '';
 
 // 音声を再生する関数
 function playAudio() {
-    if (play_queue.length === 0) {
-        console.log('再生キューが空です');
+    if (playQueue.length === 0) {
+        console.log('再生する音声ファイルがありません。再生を終了します。');
         return;
     }
-    currentAudioFile = play_queue.shift();
-    const resource = createAudioResource(currentAudioFile, {
+    if (connectedVC === null) {
+        console.log('VCに接続していません。音声を再生できません。');
+        return;
+    }
+    if (!canPlay) {
+        console.log('canPlayフラグがfalseです。音声を再生できません。 at playAudio');
+        return;
+    }
+    isPlaying = true;
+    playingFile = playQueue.shift();
+    console.log('再生する音声ファイル:', playingFile);
+    const resource = createAudioResource(playingFile, {
         inputType: StreamType.Arbitrary,
     });
     player.play(resource);
-    player.on(AudioPlayerStatus.Idle, () => {
-        if (!isPause) {
-            fs.unlink(currentAudioFile, (error) => {
-                if (error) {
-                    console.error('音声ファイルの削除中にエラーが発生しました:', error);
-                }
-            });
-            playAudio();
+}
+
+// Playerの状態が変化したときの処理
+player.on(AudioPlayerStatus.Idle, () => {
+    console.log('PlayerがIdle状態になりました。');
+    isPlaying = false;
+    // 再生した音声ファイルを削除する
+    fs.unlink(playingFile, (error) => {
+        if (error) {
+            console.error('音声ファイルの削除中にエラーが発生しました:', error);
         }
     });
-    player.on(AudioPlayerStatus.Paused, () => {
-        console.log('再生が一時中断されました');
-        play_queue.unshift(currentAudioFile);
-    });
-}
+    if (canPlay) {
+        console.log('再生を続行します。');
+        playAudio();
+    } else {
+        console.log('canPlayフラグがfalseです。再生を終了します。at Idle');
+    }
+});
+
+player.on(AudioPlayerStatus.Paused, () => {
+    isPlaying = false;
+    canPlay = false;
+    isPaused = true;
+    console.log('PlayerがPause状態になりました。');
+});
 
 // WebSocket接続を確立する関数
 function connectWebSocket() {
@@ -67,37 +94,46 @@ function connectWebSocket() {
         console.log('WebSocket接続が確立されました');
     });
     ws.on('message', (message) => {
-        console.log('WebSocketメッセージ:', message.toString());
-        if (message === 'ready') {
+        const strMessage = message.toString();
+        console.log('メッセージを受け取りました:', strMessage);
+        if (strMessage === 'ready') {
             console.log('Pythonプログラムが準備完了しました');
         }
-        if (message.toString().endsWith('.wav') || message.toString().endsWith('.mp3')) {
-            console.log('Received audio file:', message.toString());
-            play_queue.push(message.toString()); // 再生キューに音声ファイルを追加
-            isPause = false;
-            playAudio(); // 音声を再生
-        }
-        if (message === 'restart') {
-            console.log('Received restart command');
-            isPause = false;
-            if (!player.state.status === AudioPlayerStatus.Playing) {
+        if (strMessage.endsWith('.wav') || strMessage.endsWith('.mp3')) {
+            //console.log('Received audio file:', strMessage);
+            if (isPlaying) {
+                console.log('再生中です。再生キューに追加します。');
+                playQueue.push(strMessage);
+            } else {
+                console.log('再生中ではありません。直ちに再生します。');
+                playQueue = [strMessage];
                 playAudio();
             }
         }
-        if (message === 'delete') {
-            console.log('Received delete command');
-            isPause = false;
-            if (player.state.status === AudioPlayerStatus.Playing) {
-                player.stop();
+        if (strMessage === 'restart') {
+            console.log('restartコマンドを受け取りました');
+            canPlay = true; // 再生可能フラグをtrueにする
+            isPlaying = true;
+            if (isPaused) {
+                isPaused = false;
+                player.unpause(); // 一時停止を解除する
+            } else {
+                playAudio();
             }
-            play_queue.forEach(file => {
-                fs.unlink(file, (error) => {
+        }
+        if (strMessage === 'delete') {
+            console.log('deleteコマンドを受け取りました');
+            isPlaying = false;
+            player.pause(); // 再生を一時停止する
+            // 再生キューにある音声ファイルを削除する
+            for (const audioFile of playQueue) {
+                fs.unlink(audioFile, (error) => {
                     if (error) {
                         console.error('音声ファイルの削除中にエラーが発生しました:', error);
                     }
                 });
-            });
-            play_queue = [];
+            }
+            playQueue = []; // 再生キューを空にする
         }
     });
     ws.on('close', () => {
@@ -128,10 +164,14 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                 console.error('VCへの参加中にエラーが発生しました:', error);
                 return;
             }
+            // PlayerをVCに接続
+            connectedVC.subscribe(player);
             // 音声を取得する準備
             const receiver = connectedVC.receiver;
             // ユーザーが話し始めたとき
             receiver.speaking.on('start', userId => {
+                canPlay = false; // 再生可能フラグをfalseにする
+                player.pause(); // 再生を一時停止する
                 console.log(`${userId}が話し始めました。`);
                 // Pythonプログラムに通知
                 if (ws && ws.readyState === WebSocket.OPEN) {
@@ -164,6 +204,7 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                     if (ws && ws.readyState === WebSocket.OPEN) {
                         ws.send('speech_end');
                         ws.send(file_name);
+                        canPlay = true; // 再生可能フラグをtrueにする
                     }
                 });
             });
