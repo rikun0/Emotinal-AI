@@ -124,6 +124,7 @@ function connectWebSocket() {
         if (strMessage === 'delete') {
             console.log('deleteコマンドを受け取りました');
             isPlaying = false;
+            canPlay = true; // 再生可能フラグをtrueにする
             player.pause(); // 再生を一時停止する
             // 再生キューにある音声ファイルを削除する
             for (const audioFile of playQueue) {
