@@ -63,6 +63,7 @@ class EmotionalAI:
             - あなたの返答は音声合成されてユーザーに返答されます
             - あなたの声はStyleBertVITS2を使用して音声合成されます。これは日本語のみ対応しています。アルファベットは使用せずにカタカナなどで表現してください
             - 「？」、「！」、「...」などの記号を使用して感情を表現してください。それに応じて音声合成されます
+            - 絵文字は使用しないでください
             - 声の種類は変更できません。話し方や和速は記号で調整してください
             - 音声での会話であるため、聞き取りやすい簡単な言葉を使ってください
             - 返答が長くなりすぎないようにしてください
@@ -116,6 +117,7 @@ class EmotionalAI:
             - あなたの声はGoogle翻訳の音声合成を使用しています
             - 声の種類や話し方、和速などは変更できません
             - 音声での会話であるため、聞き取りやすい簡単な言葉を使ってください
+            - 絵文字は使用しないでください
             - 返答が長くなりすぎないようにしてください
             - この指示には必ず従ってください
             よろしければ「了解しました」と返答してください。それ以降、ユーザーとの会話が開始されます。
@@ -242,6 +244,7 @@ class EmotionalAI:
 
     # 音声合成のリクエストを送信するメソッド
     def tts_request(self, text):
+        print("以下のテキストを音声合成します: ", text)
         if self.emotion:
             try:
                 params = self.tts_params_templete
@@ -324,6 +327,8 @@ class EmotionalAI:
             if self.emotion:
                 try:
                     response_text = response.text
+                    if "```" in response_text:
+                        response_text = response_text.split("```")[1].strip()
                     response_text = response_text.split("6. 返答")[1].strip()
                 except Exception as e:
                     print(f"ECoTの結果の抽出中にエラーが発生しました: {e}")
@@ -331,6 +336,8 @@ class EmotionalAI:
                     continue
             else:
                 response_text = response.text
+            # 絵文字を削除
+            response_text = re.sub(r'[\U0001F300-\U0001F9FF]', '', response_text)
             self.add_llm_response(response_text)
             print("Model response: ", response_text)
             self.queues["tts"].put(response_text)
@@ -375,9 +382,10 @@ class EmotionalAI:
     def text_to_speech(self):
         while True:
             text = self.queues["tts"].get()
-            sentences = re.split(r'[。．.!?！？;:\n]', text) # 区切れ目で分割
+            sentences = re.split(r'([。．.!?！？;:]|\n)', text)  # カッコで囲むことで区切り文字を保持
+            sentences = [''.join(i) for i in zip(sentences[::2], sentences[1::2] + [''])]  # 区切り文字と結合
             for sentence in sentences:
-                if sentence.strip():  # 空文字列を避ける
+                if sentence.strip() and re.search(r'[a-zA-Z0-9\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]', sentence): # 文字が含まれているか
                     audio = self.tts_request(sentence)
                     audio_file_path = self.save_audio(audio, sentence)
                     self.queues["play"].put(audio_file_path)

@@ -36,14 +36,17 @@ let playingFile = '';
 function playAudio() {
     if (playQueue.length === 0) {
         console.log('再生する音声ファイルがありません。再生を終了します。');
+        isPlaying = false;
         return;
     }
     if (connectedVC === null) {
         console.log('VCに接続していません。音声を再生できません。');
+        isPlaying = false;
         return;
     }
     if (!canPlay) {
         console.log('canPlayフラグがfalseです。音声を再生できません。 at playAudio');
+        isPlaying = false;
         return;
     }
     isPlaying = true;
