@@ -152,3 +152,6 @@ dist
 
 # vscode
 .vscode
+
+# make github angry
+package-lock.json

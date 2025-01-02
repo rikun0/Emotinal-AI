@@ -126,6 +126,11 @@ function connectWebSocket() {
         }
         if (strMessage === 'delete') {
             console.log('deleteコマンドを受け取りました');
+            if (isPaused) {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send(path.parse(playingFile).name);
+                }
+            }
             isPlaying = false;
             canPlay = true; // 再生可能フラグをtrueにする
             player.pause(); // 再生を一時停止する

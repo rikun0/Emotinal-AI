@@ -31,6 +31,9 @@ class EmotionalAI:
         self.current_channel = None # 音声を再生中のPygameチャネル
         self.is_speaking = False
         self.stop_flag = threading.Event()
+        self.response_id = 0
+        self.generated_audio_dict = {}
+        self.id_of_stopped_audio = None
         self.queues = {
             "user_inputs": queue.Queue(),
             "play": queue.Queue(),
@@ -229,12 +232,9 @@ class EmotionalAI:
 
     # 合成された音声ファイルを一時的に保存するメソッド
     def save_audio(self, audio, sentence):
-        sentence = re.sub(r"[\\/:*?\"<>|\r\n]", "", sentence) # sentenceにファイル名に使えない文字が含まれている場合は削除
-        audio_file_path = f"./Tmp/{sentence}.{self.sound_format}"
-        counter = 1
-        while os.path.exists(audio_file_path):
-            audio_file_path = f"./Tmp/{sentence}_{str(counter)}.{self.sound_format}"
-            counter += 1
+        audio_file_path = f"./Tmp/{self.response_id}.{self.sound_format}"
+        self.generated_audio_dict[self.response_id] = sentence
+        self.response_id += 1
         if self.emotion:
             with open(audio_file_path, "wb") as f:
                 f.write(audio)
@@ -410,6 +410,9 @@ class EmotionalAI:
                             print("受け取った音声データのパスがNoneです")
                     except Exception as e:
                         print(f"音声ファイルパスの受け取りに失敗しました: {e}")
+                elif message.isdigit():
+                    self.id_of_stopped_audio = int(message)
+                    print(f"音声ID {self.id_of_stopped_audio} まで再生されたところで再生が停止されました")
                 else:
                     print(f"受信したメッセージ: {message}")
         except websockets.exceptions.ConnectionClosed:
