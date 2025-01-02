@@ -13,9 +13,8 @@ import asyncio
 import websockets
 # サードパーティライブラリのimport
 import google.generativeai as gemini
-from gtts import gTTS
 from dotenv import load_dotenv
-import pygame
+import pyttsx3
 import requests
 import speech_recognition as sr
 # 独自ライブラリのimport
@@ -185,7 +184,7 @@ class EmotionalAI:
             self.tts_params_templete = {
                 "text": "ここに合成したい音声を代入",
                 "speaker_id": 0,
-                "model_id": 4,
+                "model_id": 2,
                 "length": 1,
                 "sdp_ratio": 0.2,
                 "noise": 0.6,
@@ -198,6 +197,7 @@ class EmotionalAI:
             }
         else:
             self.sound_format = "mp3"
+            self.engine = pyttsx3.init()
 
 
     # ヘルパーメソッド群
@@ -239,7 +239,8 @@ class EmotionalAI:
             with open(audio_file_path, "wb") as f:
                 f.write(audio)
         else:
-            audio.save(audio_file_path)
+            self.engine.save_to_file(sentence, audio_file_path) # TTSと保存
+            self.engine.runAndWait()
         return audio_file_path
 
     # 音声合成のリクエストを送信するメソッド
@@ -254,11 +255,7 @@ class EmotionalAI:
                 print(f"Error generating audio: {e}")
                 return None
         else:
-            try:
-                audio = gTTS(text=text, lang="ja", slow=False)
-            except Exception as e:
-                print(f"Error generating audio: {e}")
-                return None
+            audio = text
         return audio
 
     # WebSocketサーバーを開始するメソッド
@@ -307,12 +304,14 @@ class EmotionalAI:
         while True:
             if self.chat[-1]["role"] == "user": # モデルの反応前にユーザーインプットが送られた場合は空のモデル発話を追加
                 self.add_llm_response("...")
-            self.add_user_input(self.queues["user_inputs"].get())
+            user_input = self.queues["user_inputs"].get()
+            self.add_user_input(user_input)
             # 複数のユーザー入力がある場合はそれらを全て処理
             while not self.queues["user_inputs"].empty():
                 if self.chat[-1]["role"] == "user": # モデルの反応前にユーザーインプットが送られた場合は空のモデル発話を追加
                     self.add_llm_response("...")
-                self.add_user_input(self.queues["user_inputs"].get())
+                user_input = self.queues["user_inputs"].get()
+                self.add_user_input(user_input)
             # 過去8回以前の会話を削除(トークン数節約のため)
             if len(self.chat) > 8:
                 self.chat = self.chat_template + self.chat[-6:]
@@ -331,9 +330,42 @@ class EmotionalAI:
                         response_text = response_text.split("```")[1].strip()
                     response_text = response_text.split("6. 返答")[1].strip()
                 except Exception as e:
-                    print(f"ECoTの結果の抽出中にエラーが発生しました: {e}")
-                    # TODO: 失敗した場合にプロンプトを調整する機能を追加
-                    continue
+                    is_error = True
+                    MAX_RETRY = 5
+                    retry_count = 0
+                    # うまくいくまで繰り返す
+                    while is_error:
+                        if retry_count >= MAX_RETRY:
+                            response_text = "申し訳ございません、エラーが発生しました。"
+                            break
+                        retry_count += 1
+                        print(f"ECoTの結果の抽出中にエラーが発生しました: {e}")
+                        # LLMの応答が期待したフォーマットでない場合はプロンプトを調整後、再度送信
+                        rebalanced_user_input = f"""
+                        フォーマットに従って以下のユーザーからの入力に返答してください:
+                        > {user_input}
+                        """
+                        # ユーザー入力を書き換え
+                        self.chat[-1]["parts"][0]["text"] = rebalanced_user_input
+                        # ユーザーが処理の間に追加の入力を行った場合はそれをすべて処理
+                        while not self.queues["user_inputs"].empty():
+                            if self.chat[-1]["role"] == "user":
+                                self.add_llm_response("...")
+                            user_input = self.queues["user_inputs"].get()
+                            self.add_user_input(user_input)
+                        # 過去8回以前の会話を削除(トークン数節約のため)
+                        if len(self.chat) > 8:
+                            self.chat = self.chat_template + self.chat[-6:]
+                        try:
+                            response = self.model.generate_content(self.chat)
+                            response_text = response.text
+                            if "```" in response_text:
+                                response_text = response_text.split("```")[1].strip()
+                            response_text = response_text.split("6. 返答")[1].strip()
+                            is_error = False
+                        except Exception as e:
+                            print(f"再度のECoTの結果の抽出中にエラーが発生しました: {e}")
+                            continue
             else:
                 response_text = response.text
             # 絵文字を削除
