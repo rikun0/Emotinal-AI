@@ -150,7 +150,6 @@ class EmotionalAI:
             with open("config.toml", "rb") as f:
                 config = tomllib.load(f)
             self.emotion = config["emotion"]["use_emotion"]
-            self.voice_detection_config = config["voice_detection"]
         except UnicodeDecodeError as e:
             print(f"config.tomlはUTF-8でエンコードされている必要があります。エラー: {e}")
             raise
