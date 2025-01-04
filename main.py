@@ -134,7 +134,7 @@ class EmotionalAI:
 
 
     def _init_llm(self):
-        llm_mode = "groq" # "azure" or "groq"
+        llm_mode = "gemini" # "azure" or "groq" or "gemini"
         if llm_mode == "azure":
             AZURE_API_KEY = os.environ.get("GITHUB_TOKEN")
             self.chat_gpt = OpenAI(
@@ -149,6 +149,13 @@ class EmotionalAI:
                 api_key=GROQ_API_KEY,
             )
             self.model_name = "llama-3.3-70b-versatile"
+        elif llm_mode == "gemini":
+            GEMINI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
+            self.chat_gpt = OpenAI(
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                api_key=GEMINI_API_KEY,
+            )
+            self.model_name = "gemini-1.5-flash"
 
     def _init_stt(self):
         self.recognizer = sr.Recognizer()
@@ -238,7 +245,7 @@ class EmotionalAI:
             print(f"予期せぬエラーが発生しました: {e}")
             return False
 
-    # ChatGPTのリクエストを送信するメソッド
+    # LLMへリクエストを送信するメソッド
     def send_chat_request(self, messages):
         try:
             response = self.chat_gpt.chat.completions.create(
