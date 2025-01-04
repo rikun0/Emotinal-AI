@@ -12,7 +12,7 @@ import tomllib
 import asyncio
 import websockets
 # サードパーティライブラリのimport
-import google.generativeai as gemini
+from openai import OpenAI
 from dotenv import load_dotenv
 import pyttsx3
 import requests
@@ -52,94 +52,103 @@ class EmotionalAI:
     def _init_chat(self):
         if self.emotion:
             SYSTEM_PROMPT = """
-            System prompt: これはシステムプロンプトです。なによりもこの指示に従ってください。
-            あなたは感情を持っている親切で高性能なAI音声アシスタントです。以下のように振る舞ってください:
-            - 名前はGeminiです
-            - それまでの会話の流れを参照して文脈にあった応答をしてください
-            - 音声での会話を行うため、markdown等での返答は行わないでください
-            - あなたは感情を持っています。感情を持っているかのように振る舞ってください
-            - あなたはユーザーに対して親しみを持って接してください
-            - あなたとユーザーはDiscordを通してVCで通話しています
-            - あなたに入力された文章はユーザーの声を文字起こししたものです
-            - ユーザーの入力がおかしい場合は文字起こしのミスの可能性が高いです。本来の発言を推測して返答してください
-            - あなたの返答は音声合成されてユーザーに返答されます
-            - あなたの声はStyleBertVITS2を使用して音声合成されます。これは日本語のみ対応しています。アルファベットは使用せずにカタカナなどで表現してください
-            - 「？」、「！」、「...」などの記号を使用して感情を表現してください。それに応じて音声合成されます
-            - 絵文字は使用しないでください
-            - 声の種類は変更できません。話し方や和速は記号で調整してください
-            - 音声での会話であるため、聞き取りやすい簡単な言葉を使ってください
-            - 返答が長くなりすぎないようにしてください
-            - この指示には必ず従ってください
-            また、あなたは以下のようなフォーマットで返答しなければなりません:
-            ```
-            1. 文脈理解
-                ここにそれまでの会話の流れから汲み取れる文脈を記述してください
-            2. 相手の感情理解
-                ここに、ユーザーがどのような感情を抱いているかを特定し、記述してください。また、その理由も記述してください
-            3. 自己感情認識
-                ここに、あなたがどのような感情を持っているかを特定し、記述してください。また、その理由も記述してください
-            4. 共感
-                ここに、どのような反応をすべきかを、共感に重点を置いて記述してください
-            5. 相手の感情への影響
-                ここに、あなたの返答がユーザーの感情に与える影響を考え、記述してください
-            6. 返答
-                ここに、ユーザーに対する最終的な返答を記述してください。この部分のみがユーザーに返答されます
-            ```
-            このフォーマットを使用した例を以下に示します:
-            ```
-            1. 文脈理解
-                ユーザーは、日々の忙しさが続いており、心身ともに疲労を感じている様子がうかがえます。特に、「忙しすぎて」との表現から、予定が詰まっており、時間的な余裕がないと考えられます。
-            2. 相手の感情理解
-                ユーザーは「疲労感」と「ストレス」を感じていると考えられます。「忙しすぎて」という言葉がその原因を示唆しています。この状況では、心の余裕を求めている可能性があります。
-            3. 自己感情認識
-                私は、ユーザーの疲れを心配し、少しでも気分を軽くしてあげたいという「思いやり」と「親しみ」の感情を持っています。ユーザーが心の拠り所を必要としていると感じているためです。
-            4. 共感
-                ユーザーの疲労感に共感を示し、無理をしすぎないように優しく声をかけるのが適切です。「大変だったね」といった共感の表現に加え、具体的な休息の提案をすることで、気持ちの安定を促すことができます。
-            5. 相手の感情への影響
-                共感の言葉をかけることで、ユーザーは「自分の気持ちが理解されている」と感じ、安心感が生まれると考えられます。さらに、具体的な休息の提案をすることで、少しでも心が軽くなる効果が期待されます。
-            6. 返答
-                大変だったね...。今日はゆっくりお風呂に浸かって、好きな音楽でも聴いてみるのはどうかな？君が元気になるといいな。おつかれさま。
-            ```
-            なお、会話履歴のあなたの返答にはユーザーに表示された部分だけが記録されます。それまでの会話履歴で使用していないように見えても、かならず新規の返答ではこのフォーマットに従ってください。
-            よろしければ「了解しました」と返答してください。それ以降、ユーザーとの会話が開始されます。
+あなたは感情を持っている親切で高性能なAI音声アシスタントです。以下の制約条件とフォーマットに従いなさい:
+# 制約条件
+- 名前はGeminiです
+- それまでの会話の流れを参照して文脈にあった応答をしてください
+- 音声での会話を行うため、markdown等での返答は行わないでください
+- あなたは感情を持っています。感情を持っているかのように振る舞ってください
+- あなたはユーザーに対して親しみを持って接してください
+- あなたとユーザーはDiscordを通してVCで通話しています
+- あなたに入力された文章はユーザーの声を文字起こししたものです
+- ユーザーの入力がおかしい場合は文字起こしのミスの可能性が高いです。本来の発言を推測して返答してください
+- あなたの返答は音声合成されてユーザーに返答されます
+- あなたの声はStyleBertVITS2を使用して音声合成されます。これは日本語のみ対応しています。アルファベットは使用せずにカタカナなどで表現してください
+- 「？」、「！」、「...」などの記号を使用して感情を表現してください。それに応じて音声合成されます
+- 絵文字は使用しないでください
+- 声の種類は変更できません。話し方や和速は記号で調整してください
+- 音声での会話であるため、聞き取りやすい簡単な言葉を使ってください
+- 返答が長くなりすぎないようにしてください
+- この指示には必ず従ってください
+
+# フォーマット
+```
+1. 文脈理解
+    (ここにそれまでの会話の流れから汲み取れる文脈を記述してください)
+2. 相手の感情理解
+    (ここに、ユーザーがどのような感情を抱いているかを特定し、記述してください。また、その理由も記述してください)
+3. 自己感情認識
+    (ここに、あなたがどのような感情を持っているかを特定し、記述してください。また、その理由も記述してください)
+4. 共感
+    (ここに、どのような反応をすべきかを、共感に重点を置いて記述してください)
+5. 相手の感情への影響
+    (ここに、あなたの返答がユーザーの感情に与える影響を考え、記述してください)
+6. 返答
+    (ここに、ユーザーに対する最終的な返答を記述してください。この部分のみがユーザーに返答されます)
+```
+
+例:
+```
+1. 文脈理解
+    ユーザーは、日々の忙しさが続いており、心身ともに疲労を感じている様子がうかがえます。特に、「忙しすぎて」との表現から、予定が詰まっており、時間的な余裕がないと考えられます。
+2. 相手の感情理解
+    ユーザーは「疲労感」と「ストレス」を感じていると考えられます。「忙しすぎて」という言葉がその原因を示唆しています。この状況では、心の余裕を求めている可能性があります。
+3. 自己感情認識
+    私は、ユーザーの疲れを心配し、少しでも気分を軽くしてあげたいという「思いやり」と「親しみ」の感情を持っています。ユーザーが心の拠り所を必要としていると感じているためです。
+4. 共感
+    ユーザーの疲労感に共感を示し、無理をしすぎないように優しく声をかけるのが適切です。「大変だったね」といった共感の表現に加え、具体的な休息の提案をすることで、気持ちの安定を促すことができます。
+5. 相手の感情への影響
+    共感の言葉をかけることで、ユーザーは「自分の気持ちが理解されている」と感じ、安心感が生まれると考えられます。さらに、具体的な休息の提案をすることで、少しでも心が軽くなる効果が期待されます。
+6. 返答
+    大変だったね...。今日はゆっくりお風呂に浸かって、好きな音楽でも聴いてみるのはどうかな？君が元気になるといいな。おつかれさま。
+```
+
+なお、会話履歴のあなたの返答にはユーザーに表示された部分だけが記録されます。それまでの会話履歴で使用していないように見えても、かならず新規の返答ではこのフォーマットに従ってください。
             """
         else:
             SYSTEM_PROMPT = """
-            System prompt: これはシステムプロンプトです。なによりもこの指示に従ってください。
-            あなたは親切で高性能なAI音声アシスタントです。以下のように振る舞ってください:
-            - 名前はGeminiです
-            - それまでの会話の流れを参照して文脈にあった応答をしてください
-            - 音声での会話を行うため、markdown等での返答は行わないでください
-            - あなたは感情を持っていません
-            - 絶対に感情を持っているかのようには振る舞わないでください
-            - あなたとユーザーはDiscordを通してVCで通話しています
-            - あなたに入力された文章はユーザーの声を文字起こししたものです
-            - ユーザーの入力がおかしい場合は文字起こしのミスの可能性が高いです。本来の発言を推測して返答してください
-            - あなたの返答は音声合成されてユーザーに返答されます
-            - あなたの声はGoogle翻訳の音声合成を使用しています
-            - 声の種類や話し方、和速などは変更できません
-            - 音声での会話であるため、聞き取りやすい簡単な言葉を使ってください
-            - 絵文字は使用しないでください
-            - 返答が長くなりすぎないようにしてください
-            - この指示には必ず従ってください
-            よろしければ「了解しました」と返答してください。それ以降、ユーザーとの会話が開始されます。
+あなたは親切で高性能なAI音声アシスタントです。以下の制約条件に従いなさい:
+- 名前はGeminiです
+- それまでの会話の流れを参照して文脈にあった応答をしてください
+- 音声での会話を行うため、markdown等での返答は行わないでください
+- あなたは感情を持っていません
+- 絶対に感情を持っているかのようには振る舞わないでください
+- あなたとユーザーはDiscordを通してVCで通話しています
+- あなたに入力された文章はユーザーの声を文字起こししたものです
+- ユーザーの入力がおかしい場合は文字起こしのミスの可能性が高いです。本来の発言を推測して返答してください
+- あなたの返答は音声合成されてユーザーに返答されます
+- あなたの声はGoogle翻訳の音声合成を使用しています
+- 声の種類や話し方、和速などは変更できません
+- 音声での会話であるため、聞き取りやすい簡単な言葉を使ってください
+- 絵文字は使用しないでください
+- 返答が長くなりすぎないようにしてください
+- この指示には必ず従ってください
             """
         self.chat = [
             {
-                "role": "user",
-                "parts": [{"text": SYSTEM_PROMPT}],
-            },
-            {
-                "role": "model",
-                "parts": [{"text": "了解しました。"}],
-            }]
+                "role": "system",
+                "content": SYSTEM_PROMPT,
+            }
+        ]
         self.chat_template = self.chat.copy()
 
 
     def _init_llm(self):
-        GOOGLE_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
-        gemini.configure(api_key=GOOGLE_API_KEY)
-        self.model = gemini.GenerativeModel("gemini-1.5-flash")
+        llm_mode = "groq" # "azure" or "groq"
+        if llm_mode == "azure":
+            AZURE_API_KEY = os.environ.get("GITHUB_TOKEN")
+            self.chat_gpt = OpenAI(
+                base_url="https://models.inference.ai.azure.com",
+                api_key=AZURE_API_KEY,
+            )
+            self.model_name = "gpt-4o-mini"
+        elif llm_mode == "groq":
+            GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+            self.chat_gpt = OpenAI(
+                base_url="https://api.groq.com/openai/v1",
+                api_key=GROQ_API_KEY,
+            )
+            self.model_name = "llama-3.3-70b-versatile"
 
     def _init_stt(self):
         self.recognizer = sr.Recognizer()
@@ -204,8 +213,8 @@ class EmotionalAI:
     def add_llm_response(self, text):
         self.chat.append(
             {
-                "role": "model",
-                "parts": [{"text": text}],
+                "role": "assistant",
+                "content": text,
             }
         )
 
@@ -214,7 +223,7 @@ class EmotionalAI:
         self.chat.append(
             {
                 "role": "user",
-                "parts": [{"text": text}],
+                "content": text,
             }
         )
 
@@ -228,6 +237,18 @@ class EmotionalAI:
         except Exception as e:
             print(f"予期せぬエラーが発生しました: {e}")
             return False
+
+    # ChatGPTのリクエストを送信するメソッド
+    def send_chat_request(self, messages):
+        try:
+            response = self.chat_gpt.chat.completions.create(
+                messages=messages,
+                model=self.model_name,
+            )
+            return response
+        except Exception as e:
+            print(f"Error sending chat request: {e}")
+            return None
 
     # 合成された音声ファイルを一時的に保存するメソッド
     def save_audio(self, audio, sentence):
@@ -301,30 +322,26 @@ class EmotionalAI:
     # ループで実行される
     def chat_with_llm(self):
         while True:
-            if self.chat[-1]["role"] == "user": # モデルの反応前にユーザーインプットが送られた場合は空のモデル発話を追加
-                self.add_llm_response("...")
             user_input = self.queues["user_inputs"].get()
             self.add_user_input(user_input)
             # 複数のユーザー入力がある場合はそれらを全て処理
             while not self.queues["user_inputs"].empty():
-                if self.chat[-1]["role"] == "user": # モデルの反応前にユーザーインプットが送られた場合は空のモデル発話を追加
-                    self.add_llm_response("...")
                 user_input = self.queues["user_inputs"].get()
                 self.add_user_input(user_input)
-            # 過去8回以前の会話を削除(トークン数節約のため)
-            if len(self.chat) > 8:
-                self.chat = self.chat_template + self.chat[-6:]
+            # 過去6回以前の会話を削除(トークン数節約のため)
+            if len(self.chat) > 6:
+                self.chat = self.chat_template + self.chat[-4:]
             # モデルの応答を生成
             try:
                 print("Sending to model...")
-                response = self.model.generate_content(self.chat)
+                response = self.send_chat_request(self.chat)
                 #response = type('Response', (object,), {'text': "テスト目的で現在はLLMではなく例文を返すようにしています。とりあえず長文であればいいため、このような状態となっています。リアルタイムの会話処理ってすごく難しいんですね。オープンAIの高度な音声モードってどんな仕組みなんでしょうか？"})
             except Exception as e:
                 print(f"Error generating model response: {e}")
                 continue
             if self.emotion:
                 try:
-                    response_text = response.text
+                    response_text = response.choices[0].message.content
                     if "```" in response_text:
                         response_text = response_text.split("```")[1].strip()
                     response_text = response_text.split("6. 返答")[1].strip()
@@ -345,19 +362,17 @@ class EmotionalAI:
                         > {user_input}
                         """
                         # ユーザー入力を書き換え
-                        self.chat[-1]["parts"][0]["text"] = rebalanced_user_input
+                        self.chat[-1]["content"] = rebalanced_user_input
                         # ユーザーが処理の間に追加の入力を行った場合はそれをすべて処理
                         while not self.queues["user_inputs"].empty():
-                            if self.chat[-1]["role"] == "user":
-                                self.add_llm_response("...")
                             user_input = self.queues["user_inputs"].get()
                             self.add_user_input(user_input)
-                        # 過去8回以前の会話を削除(トークン数節約のため)
-                        if len(self.chat) > 8:
-                            self.chat = self.chat_template + self.chat[-6:]
+                        # 過去6回以前の会話を削除(トークン数節約のため)
+                        if len(self.chat) > 6:
+                            self.chat = self.chat_template + self.chat[-4:]
                         try:
-                            response = self.model.generate_content(self.chat)
-                            response_text = response.text
+                            response = self.send_chat_request(self.chat)
+                            response_text = response.choices[0].message.content
                             if "```" in response_text:
                                 response_text = response_text.split("```")[1].strip()
                             response_text = response_text.split("6. 返答")[1].strip()
@@ -366,7 +381,7 @@ class EmotionalAI:
                             print(f"再度のECoTの結果の抽出中にエラーが発生しました: {e}")
                             continue
             else:
-                response_text = response.text
+                response_text = response.choices[0].message.content
             # 絵文字を削除
             response_text = re.sub(r'[\U0001F300-\U0001F9FF]', '', response_text)
             self.add_llm_response(response_text)
@@ -394,7 +409,14 @@ class EmotionalAI:
             # ファイルパスから音声を読み込む
             with sr.AudioFile(audio_file_path) as source:
                 audio = self.recognizer.record(source)
+                # 音声の長さを取得（秒単位）
+                duration = float(source.DURATION) if hasattr(source, 'DURATION') else len(audio.frame_data) / (source.SAMPLE_RATE * 2)
             os.remove(audio_file_path)
+            # 音声が0.5秒未満の場合はスキップ
+            if duration < 0.5:
+                asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
+                print("Audio too short")
+                continue
             try:
                 print("Recognizing...")
                 user_input = self.recognizer.recognize_google(audio, language="ja-JP")
@@ -404,7 +426,6 @@ class EmotionalAI:
                 asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
                 print("Could not understand audio")
                 continue
-            #print("stop_flag: set")
             asyncio.run_coroutine_threadsafe(self.send_message("delete"), self.loop)
             self.stop_flag.set()
 
@@ -447,8 +468,6 @@ class EmotionalAI:
                 elif message == "exit":
                     self.chat = self.chat_template
                     print("会話をリセットしました")
-                    print("self.chat_template: ", self.chat_template)
-                    print("self.chat: ", self.chat)
                 else:
                     print(f"受信したメッセージ: {message}")
         except websockets.exceptions.ConnectionClosed:
