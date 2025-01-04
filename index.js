@@ -224,6 +224,9 @@ client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
             console.log('BotがVCから退出します。');
             try {
                 connectedVC.destroy();
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.send('exit');
+                }
             } catch (error) {
                 console.error('VCから退出中にエラーが発生しました:', error);
             }

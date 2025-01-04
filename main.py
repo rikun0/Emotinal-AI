@@ -133,7 +133,7 @@ class EmotionalAI:
                 "role": "model",
                 "parts": [{"text": "了解しました。"}],
             }]
-        self.chat_template = self.chat
+        self.chat_template = self.chat.copy()
 
 
     def _init_llm(self):
@@ -444,6 +444,11 @@ class EmotionalAI:
                 elif message.isdigit():
                     self.id_of_stopped_audio = int(message)
                     print(f"音声ID {self.id_of_stopped_audio} まで再生されたところで再生が停止されました")
+                elif message == "exit":
+                    self.chat = self.chat_template
+                    print("会話をリセットしました")
+                    print("self.chat_template: ", self.chat_template)
+                    print("self.chat: ", self.chat)
                 else:
                     print(f"受信したメッセージ: {message}")
         except websockets.exceptions.ConnectionClosed:
