@@ -11,12 +11,13 @@ import time
 import tomllib
 import asyncio
 import websockets
+import wave
 # サードパーティライブラリのimport
 from openai import OpenAI
 from dotenv import load_dotenv
 import pyttsx3
 import requests
-import speech_recognition as sr
+from groq import Groq
 # 独自ライブラリのimport
 # いまのところなし
 
@@ -134,38 +135,45 @@ class EmotionalAI:
 
 
     def _init_llm(self):
-        llm_mode = "gemini" # "azure" or "groq" or "gemini"
-        if llm_mode == "azure":
+        if self.llm_mode == "github":
             AZURE_API_KEY = os.environ.get("GITHUB_TOKEN")
             self.chat_gpt = OpenAI(
                 base_url="https://models.inference.ai.azure.com",
                 api_key=AZURE_API_KEY,
             )
             self.model_name = "gpt-4o-mini"
-        elif llm_mode == "groq":
+        elif self.llm_mode == "groq":
             GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
             self.chat_gpt = OpenAI(
                 base_url="https://api.groq.com/openai/v1",
                 api_key=GROQ_API_KEY,
             )
             self.model_name = "llama-3.3-70b-versatile"
-        elif llm_mode == "gemini":
+        elif self.llm_mode == "gemini":
             GEMINI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY")
             self.chat_gpt = OpenAI(
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 api_key=GEMINI_API_KEY,
             )
             self.model_name = "gemini-1.5-flash"
+        elif self.llm_mode == "azure":
+            AZURE_API_KEY = os.environ.get("AZURE_API_KEY")
+            AZURE_API_ENDPOINT = os.environ.get("AZURE_API_ENDPOINT")
+            self.chat_gpt = OpenAI(
+                base_url=AZURE_API_ENDPOINT,
+                api_key=AZURE_API_KEY,
+            )
+            self.model_name = "gpt-4o-mini"
 
     def _init_stt(self):
-        self.recognizer = sr.Recognizer()
-        #self.microphone = sr.Microphone()
+        self.recognizer_groq = Groq()
 
     def _init_read_config(self):
         try:
             with open("config.toml", "rb") as f:
                 config = tomllib.load(f)
             self.emotion = config["emotion"]["use_emotion"]
+            self.llm_mode = config["llm"]["mode"]
         except UnicodeDecodeError as e:
             print(f"config.tomlはUTF-8でエンコードされている必要があります。エラー: {e}")
             raise
@@ -413,26 +421,34 @@ class EmotionalAI:
         while True:
             # 音声入力をテキストに変換
             audio_file_path = self.queues["user_voice"].get()
-            # ファイルパスから音声を読み込む
-            with sr.AudioFile(audio_file_path) as source:
-                audio = self.recognizer.record(source)
-                # 音声の長さを取得（秒単位）
-                duration = float(source.DURATION) if hasattr(source, 'DURATION') else len(audio.frame_data) / (source.SAMPLE_RATE * 2)
-            os.remove(audio_file_path)
             # 音声が0.5秒未満の場合はスキップ
+            with wave.open(audio_file_path, "rb") as f:
+                frames = f.getnframes()
+                rate = f.getframerate()
+                duration = frames / float(rate)
             if duration < 0.5:
                 asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
                 print("Audio too short")
+                os.remove(audio_file_path)
                 continue
             try:
                 print("Recognizing...")
-                user_input = self.recognizer.recognize_google(audio, language="ja-JP")
+                # groqで文字起こし
+                with open(audio_file_path, "rb") as file:
+                    user_input = self.recognizer_groq.audio.transcriptions.create(
+                        file=(audio_file_path, file.read()),
+                        model="whisper-large-v3-turbo",
+                        response_format="text",
+                        language="ja",
+                    )
                 print(f"User input: {user_input}")
                 self.queues["user_inputs"].put(user_input)
-            except sr.UnknownValueError:
+            except Exception as e:
                 asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
-                print("Could not understand audio")
+                print("文字起こし中にエラーが発生しました: ", e)
+                os.remove(audio_file_path)
                 continue
+            os.remove(audio_file_path)
             asyncio.run_coroutine_threadsafe(self.send_message("delete"), self.loop)
             self.stop_flag.set()
 

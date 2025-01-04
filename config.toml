@@ -3,3 +3,7 @@
 [emotion]
 # 感情のオンオフ
 use_emotion = true
+[llm]
+# llmの種類
+# azure, github, gemini, groq
+mode = "gemini"
