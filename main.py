@@ -448,6 +448,11 @@ class EmotionalAI:
                         response_format="text",
                         language="ja",
                     )
+                if user_input == "ご視聴ありがとうございました" or user_input == "ありがとうございました":
+                    print("文字起こしでハルシネーションが検出されました")
+                    asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
+                    os.remove(audio_file_path)
+                    continue
                 print(f"User input: {user_input}")
                 self.queues["user_inputs"].put(user_input)
             except Exception as e:
