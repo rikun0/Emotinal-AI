@@ -1,13 +1,5 @@
 # 設定ファイル
 
 [emotion]
-# 感情全体のオンオフ
+# 感情のオンオフ
 use_emotion = true
-
-# 感情の詳細な設定を有効にするか
-# ここがtureの場合、generalは無視されます
-advanced_mode = false
-
-[emotion.advanced]
-# 音声の合成に感情を付与するか
-voice_emotion = true
