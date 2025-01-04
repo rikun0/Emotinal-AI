@@ -5,5 +5,5 @@
 use_emotion = true
 [llm]
 # llmの種類
-# azure, github, gemini, groq
-mode = "gemini"
+# azure, github, gemini, groq, openai
+mode = "openai"

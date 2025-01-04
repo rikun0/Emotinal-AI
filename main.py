@@ -164,6 +164,12 @@ class EmotionalAI:
                 api_key=AZURE_API_KEY,
             )
             self.model_name = "gpt-4o-mini"
+        elif self.llm_mode == "openai":
+            OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+            self.chat_gpt = OpenAI(
+                api_key=OPENAI_API_KEY,
+            )
+            self.model_name = "gpt-4o-mini"
 
     def _init_stt(self):
         self.recognizer_groq = Groq()
@@ -361,6 +367,7 @@ class EmotionalAI:
                         response_text = response_text.split("```")[1].strip()
                     response_text = response_text.split("6. 返答")[1].strip()
                 except Exception as e:
+                    error_message = str(e)
                     is_error = True
                     MAX_RETRY = 5
                     retry_count = 0
@@ -370,7 +377,7 @@ class EmotionalAI:
                             response_text = "申し訳ございません、エラーが発生しました。"
                             break
                         retry_count += 1
-                        print(f"ECoTの結果の抽出中にエラーが発生しました: {e}")
+                        print(f"ECoTの結果の抽出中にエラーが発生しました: {error_message}")
                         # LLMの応答が期待したフォーマットでない場合はプロンプトを調整後、再度送信
                         rebalanced_user_input = f"""
                         フォーマットに従って以下のユーザーからの入力に返答してください:
