@@ -1,7 +1,3 @@
-# main_class_test.py
-# main.pyをclass形式に移行中
-# 最終更新: 2024/11/24
-
 # 標準ライブラリのimport
 import os
 import queue
@@ -448,7 +444,7 @@ class EmotionalAI:
                         response_format="text",
                         language="ja",
                     )
-                if user_input == "ご視聴ありがとうございました" or user_input == "ありがとうございました":
+                if user_input == "ご視聴ありがとうございました" or user_input == "ありがとうございました" or user_input == "ご視聴ありがとうございました。" or user_input == "ありがとうございました。":
                     print("文字起こしでハルシネーションが検出されました")
                     asyncio.run_coroutine_threadsafe(self.send_message("restart"), self.loop)
                     os.remove(audio_file_path)
